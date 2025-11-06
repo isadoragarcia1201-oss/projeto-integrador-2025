@@ -21,3 +21,172 @@ def agendamentos():
 
 if __name__ == '__main__':
     app.run(debug=True)
+////////////////////////////////////////////////////////////////////////////
+
+
+import os
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
+
+# Carrega variáveis do .env
+load_dotenv()
+
+app = Flask(__name__)
+CORS(app)
+
+# String de conexão do .env (ex.: mssql+pyodbc://sa:SENHA@localhost/EscolaDB?... )
+DATABASE_URL = os.environ["DATABASE_URL"]
+
+# Engine para SQL Server
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, fast_executemany=True)
+
+@app.get("/")
+def health():
+    return {"ok": True, "service": "api-consultas"}, 200
+
+# ----------------- ROTAS -----------------
+@app.get("/medicos")
+def listar_medicos():
+    with SessionLocal() as session:
+        medicos = session.query(Medicos).all()
+        dados = [
+            {"id": m.id, "nome": m.nome, "especialidade": m.especialidade,
+             "telefone": m.telefone, "email": m.email}
+            for m in medicos
+        ]
+    return jsonify(dados), 200
+
+
+@app.post("/medicos")
+def criar_medico():
+    data = request.get_json(force=True)
+    nome = data.get("nome")
+    especialidade = data.get("especialidade")
+    telefone = data.get("telefone")
+    email = data.get("email")
+
+    if not nome or not especialidade:
+        return jsonify({"error": "Campos 'nome' e 'especialidade' são obrigatórios"}), 400
+
+    with SessionLocal() as session:
+        novo = Medicos(
+            nome=nome,
+            especialidade=especialidade,
+            telefone=telefone,
+            email=email
+        )
+        session.add(novo)
+        session.commit()
+        session.refresh(novo)
+
+    return jsonify({
+        "id": novo.id,
+        "nome": novo.nome,
+        "especialidade": novo.especialidade,
+        "telefone": novo.telefone,
+        "email": novo.email
+    }), 201
+
+# ----------------- ROTAS PACIENTES -----------------
+@app.get("/pacientes")
+def listar_pacientes():
+    with SessionLocal() as session:
+        pacientes = session.query(Pacientes).all()
+        dados = [
+            {"id": p.id, "nome": p.nome, "data_nascimento": str(p.data_nascimento),
+             "telefone": p.telefone, "email": p.email}
+            for p in pacientes
+        ]
+    return jsonify(dados), 200
+
+
+@app.post("/pacientes")
+def criar_paciente():
+    data = request.get_json(force=True)
+    nome = data.get("nome")
+    data_nascimento = data.get("data_nascimento")
+    telefone = data.get("telefone")
+    email = data.get("email")
+
+    if not nome:
+        return jsonify({"error": "Campo 'nome' é obrigatório"}), 400
+
+    with SessionLocal() as session:
+        novo = Pacientes(
+            nome=nome,
+            data_nascimento=data_nascimento,
+            telefone=telefone,
+            email=email
+        )
+        session.add(novo)
+        session.commit()
+        session.refresh(novo)
+
+    return jsonify({
+        "id": novo.id,
+        "nome": novo.nome,
+        "data_nascimento": str(novo.data_nascimento),
+        "telefone": novo.telefone,
+        "email": novo.email
+    }), 201
+
+# ----------------- ROTAS CONSULTAS -----------------
+@app.get("/consultas")
+def listar_consultas():
+    with SessionLocal() as session:
+        consultas = session.query(Consultas).all()
+        dados = [
+            {
+                "id": c.id,
+                "paciente": c.Pacientes.nome if c.Pacientes else None,
+                "medico": c.Medicos.nome if c.Medicos else None,
+                "data_consulta": str(c.data_consulta),
+                "hora_consulta": str(c.hora_consulta),
+                "descricao": c.descricao,
+                "status": c.status
+            }
+            for c in consultas
+        ]
+    return jsonify(dados), 200
+
+
+@app.post("/consultas")
+def criar_consulta():
+    data = request.get_json(force=True)
+    id_paciente = data.get("id_paciente")
+    id_medico = data.get("id_medico")
+    data_consulta = data.get("data_consulta")
+    hora_consulta = data.get("hora_consulta")
+    descricao = data.get("descricao")
+    status = data.get("status", "Agendada")
+
+    if not all([id_paciente, id_medico, data_consulta, hora_consulta]):
+        return jsonify({"error": "Campos obrigatórios: id_paciente, id_medico, data_consulta e hora_consulta"}), 400
+
+    with SessionLocal() as session:
+        nova = Consultas(
+            id_paciente=id_paciente,
+            id_medico=id_medico,
+            data_consulta=data_consulta,
+            hora_consulta=hora_consulta,
+            descricao=descricao,
+            status=status
+        )
+        session.add(nova)
+        session.commit()
+        session.refresh(nova)
+
+    return jsonify({
+        "id": nova.id,
+        "id_paciente": nova.id_paciente,
+        "id_medico": nova.id_medico,
+        "data_consulta": str(nova.data_consulta),
+        "hora_consulta": str(nova.hora_consulta),
+        "descricao": nova.descricao,
+        "status": nova.status
+    }), 201
+
+if __name__ == "__main__":
+    app.run(port=5000, debug=True)
